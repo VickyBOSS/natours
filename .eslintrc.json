@@ -1,0 +1,21 @@
+{
+  "env": {
+    "commonjs": true,
+    "es2020": true,
+    "node": true
+  },
+  "extends": ["prettier", "eslint:recommended", "plugin:node/recommended"],
+  "plugins": ["prettier"],
+  "parserOptions": {
+    "ecmaVersion": 2020
+  },
+  "rules": {
+    "prettier/prettier": "error",
+    "no-await-in-loop": "error",
+    "no-console": "warn",
+    "no-eval": "error",
+    "no-invalid-this": "error",
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "req|res|next|err" }]
+    // "node/exports-style": ["error", "module.exports"]
+  }
+}
