@@ -5,6 +5,14 @@ const mongoose = require('mongoose');
 
 const port = process.env.PORT || 3000;
 
+process.on('uncaughtException', err => {
+  console.log(err.name, ' : ', err.message);
+  console.log(err);
+  console.log('UNCAUGHT EXCEPTIONS! Shutting down the app...');
+  // eslint-disable-next-line no-process-exit
+  process.exit(1);
+});
+
 mongoose
   .connect(process.env.DATABASE, {
     useNewUrlParser: true,
@@ -14,13 +22,23 @@ mongoose
   })
   .then(() => {
     console.log('Connected to database!');
-  })
-  .catch((err) => console.log(err.message));
+  });
 
-app.listen(port, () => console.log(`App is running on port ${port}`));
+const server = app.listen(port, () =>
+  console.log(`App is running on port ${port}`)
+);
 
-// const fs = require("fs");
-// const Tour = require("./models/tourModel");
+process.on('unhandledRejection', err => {
+  console.log(err.name, ' : ', err.message);
+  console.log('UNHANDLED REJECTION! Shutting down the app...');
+  server.close(() => {
+    // eslint-disable-next-line no-process-exit
+    process.exit(1);
+  });
+});
+
+// const fs = require('fs');
+// const Tour = require('./models/tourModel');
 
 // const tours = JSON.parse(
 //   fs.readFileSync(`${__dirname}/dev-data/data/tours.json`)

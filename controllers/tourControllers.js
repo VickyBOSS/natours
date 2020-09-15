@@ -1,113 +1,193 @@
 const Tour = require('./../models/tourModel');
+const APIFeatures = require('../utils/apiFeatures');
+const catchAsyncMiddleware = require('./../utils/catchAsyncMiddleware');
+const AppError = require('../utils/appError');
+const { Schema } = require('mongoose');
 
-exports.createTour = async (req, res) => {
-  try {
-    const tour = await Tour.create(req.body);
+exports.top5CheapAlias = (req, res, next) => {
+  req.query.limit = 5;
+  req.query.sort = '-ratingsAverage,price';
 
-    res.status(201).json({
-      status: 'ok',
-      data: {
-        tour,
+  next();
+};
+
+exports.createTour = catchAsyncMiddleware(async (req, res, next) => {
+  const tour = await Tour.create(req.body);
+
+  res.status(201).json({
+    status: 'ok',
+    data: {
+      tour,
+    },
+  });
+});
+
+exports.checkTourId = (req, res, next) => {
+  const tourId = req.params.id;
+};
+
+exports.getMonthlyPlan = catchAsyncMiddleware(async (req, res, next) => {
+  const year = req.params.year;
+
+  const plans = await Tour.aggregate([
+    {
+      $unwind: '$startDates',
+    },
+    {
+      $match: {
+        startDates: {
+          $gte: new Date(`${year}-01-01`),
+          $lte: new Date(`${year}-12-31`),
+        },
       },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'error',
-      message: err.message,
-    });
-  }
-};
-
-exports.getTours = async (req, res) => {
-  try {
-    // 1 A ) Filtering Basics
-    const queryObj = { ...req.query };
-    const excludeFields = ['page', 'sort', 'limit', 'fields'];
-    excludeFields.forEach((el) => delete queryObj[el]);
-
-    // 1 B ) Advance Filtering
-    let queryObjString = JSON.stringify(queryObj);
-    queryObjString = queryObjString.replace(
-      /\b(lt|lte|gt|gte)\b/g,
-      (match) => `$${match}`
-    );
-
-    let query = Tour.find(JSON.parse(queryObjString));
-
-    // 2 ) Sorting
-    if (req.query.sort) {
-      query = query.sort(req.query.sort);
-    } else {
-      query = query.sort('ratingsAverage');
-    }
-
-    const tours = await query;
-
-    res.json({
-      status: 'ok',
-      length: tours.length,
-      data: {
-        tours,
+    },
+    {
+      $group: {
+        _id: {
+          $month: '$startDates',
+        },
+        totalTours: { $sum: 1 },
+        tours: { $push: '$name' },
       },
-    });
-  } catch (err) {
-    res.status(500).json({
-      status: 'error',
-      message: err.message,
-    });
-  }
-};
-
-exports.getTour = async (req, res) => {
-  try {
-    const tour = await Tour.findById(req.params.id);
-
-    res.json({
-      status: 'ok',
-      data: {
-        tour,
+    },
+    {
+      $addFields: {
+        month: '$_id',
       },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'error',
-      message: err.message,
-    });
-  }
-};
-
-exports.updateTour = async (req, res) => {
-  try {
-    const tour = await Tour.findByIdAndUpdate(req.params.id, req.body, {
-      new: true,
-      runValidators: true,
-    });
-
-    res.json({
-      status: 'ok',
-      data: {
-        tour,
+    },
+    {
+      $project: {
+        _id: 0,
       },
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'error',
-      message: err.message,
-    });
-  }
-};
+    },
+    {
+      $sort: {
+        totalTours: -1,
+      },
+    },
+    {
+      $limit: 6,
+    },
+  ]);
 
-exports.deleteTour = async (req, res) => {
-  try {
-    await Tour.findByIdAndDelete(req.params.id);
+  res.json({
+    status: 'ok',
+    length: plans.length,
+    data: {
+      plans,
+    },
+  });
+});
 
-    res.json({
-      status: 'ok',
-    });
-  } catch (err) {
-    res.status(400).json({
-      status: 'error',
-      message: err.message,
-    });
+exports.getToursStats = catchAsyncMiddleware(async (req, res, next) => {
+  const stats = await Tour.aggregate([
+    {
+      $match: {
+        ratingsAverage: {
+          $gte: 4.5,
+        },
+      },
+    },
+    {
+      $group: {
+        _id: '$difficulty',
+        noOfTours: { $sum: 1 },
+        avgRating: { $avg: '$ratingsAverage' },
+        avgPrice: { $avg: '$price' },
+        minPrice: { $min: '$price' },
+        maxPrice: { $max: '$price' },
+      },
+    },
+    {
+      $sort: {
+        avgRating: -1,
+      },
+    },
+    {
+      $match: {
+        _id: {
+          $ne: 'easy',
+        },
+      },
+    },
+  ]);
+
+  res.json({
+    status: 'ok',
+    data: {
+      stats,
+    },
+  });
+});
+
+exports.getTours = catchAsyncMiddleware(async (req, res, next) => {
+  const features = new APIFeatures(Tour.find(), req.query)
+    .filter()
+    .sort()
+    .limitFields()
+    .paginate();
+
+  const tours = await features.query;
+
+  res.json({
+    status: 'ok',
+    length: tours.length,
+    data: {
+      tours,
+    },
+  });
+});
+
+exports.getTour = catchAsyncMiddleware(async (req, res, next) => {
+  const tour = await Tour.findById(req.params.id);
+
+  if (!tour) throw new AppError(404, 'Tour not found!');
+
+  res.json({
+    status: 'ok',
+    data: {
+      tour,
+    },
+  });
+});
+
+exports.updateTour = catchAsyncMiddleware(async (req, res, next) => {
+  // const tour = await Tour.findByIdAndUpdate(req.params.id, req.body, {
+  //   new: true,
+  //   runValidators: true,
+  // });
+
+  const updatables = ['priceDiscount'];
+
+  Object.keys(req.body).forEach(element => {
+    if (!updatables.includes(element))
+      throw new Error(`The field (${element}) can not be updated!`);
+  });
+
+  const tour = await Tour.findById(req.params.id);
+
+  if (!tour) throw new AppError(404, 'Tour not found!');
+
+  for (let key in req.body) {
+    tour[key] = req.body[key];
   }
-};
+
+  await tour.save();
+
+  res.json({
+    status: 'ok',
+    data: {
+      tour,
+    },
+  });
+});
+
+exports.deleteTour = catchAsyncMiddleware(async (req, res, next) => {
+  const tour = await Tour.findByIdAndDelete(req.params.id);
+
+  if (!tour) throw new AppError(404, 'Tour not found!');
+
+  res.json({
+    status: 'ok',
+  });
+});
